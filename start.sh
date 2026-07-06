@@ -1,10 +1,16 @@
 #!/bin/bash
+set -e
 
-set -u
+# ==============================
+# HARDCODED LOGIN DETAILS
+# ==============================
 
 SSH_USER="ipx"
 SSH_PASSWORD="DESTROYER009@a"
-SERVEO_ALIAS="DESTROYER"
+
+# ==============================
+# CREATE SSH USER
+# ==============================
 
 echo "Creating SSH user..."
 
@@ -13,16 +19,26 @@ if ! id "$SSH_USER" >/dev/null 2>&1; then
 fi
 
 echo "$SSH_USER:$SSH_PASSWORD" | chpasswd
+
 usermod -aG sudo "$SSH_USER"
 
-echo "$SSH_USER ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$SSH_USER"
+echo "$SSH_USER ALL=(ALL) NOPASSWD:ALL" \
+    > "/etc/sudoers.d/$SSH_USER"
+
 chmod 440 "/etc/sudoers.d/$SSH_USER"
+
+# ==============================
+# CONFIGURE SSH
+# ==============================
 
 mkdir -p /run/sshd
 mkdir -p /etc/ssh/sshd_config.d
 
 cat > /etc/ssh/sshd_config.d/railway.conf <<EOF
+Port 22
+ListenAddress 0.0.0.0
 PasswordAuthentication yes
+KbdInteractiveAuthentication no
 PermitRootLogin no
 UsePAM no
 X11Forwarding no
@@ -31,41 +47,19 @@ ClientAliveInterval 60
 ClientAliveCountMax 3
 EOF
 
+# Generate SSH host keys
 ssh-keygen -A
 
-echo "Testing SSH configuration..."
+# Test configuration
 /usr/sbin/sshd -t
 
-echo "Starting SSH server..."
-/usr/sbin/sshd
-
 echo ""
-echo "=========================================="
-echo " SSH SERVER STARTED"
+echo "======================================"
+echo " SSH SERVER READY"
 echo " User: $SSH_USER"
-echo " Serveo alias: $SERVEO_ALIAS"
-echo "=========================================="
+echo " Internal port: 22"
+echo "======================================"
 echo ""
 
-while true; do
-    echo "Connecting tunnel to Serveo..."
-
-    ssh \
-        -N \
-        -T \
-        -o StrictHostKeyChecking=accept-new \
-        -o ServerAliveInterval=30 \
-        -o ServerAliveCountMax=3 \
-        -o TCPKeepAlive=yes \
-        -o ConnectTimeout=20 \
-        -o ExitOnForwardFailure=yes \
-        -R "${SERVEO_ALIAS}:22:localhost:22" \
-        serveo.net
-
-    EXIT_CODE=$?
-
-    echo ""
-    echo "Serveo tunnel disconnected with code $EXIT_CODE."
-    echo "Reconnecting in 5 seconds..."
-    sleep 5
-done
+# Keep container alive with SSH as main process
+exec /usr/sbin/sshd -D -e
